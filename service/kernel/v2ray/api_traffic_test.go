@@ -3,7 +3,6 @@ package v2ray
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net"
 	"testing"
 	"time"
@@ -61,17 +60,23 @@ func TestTrafficCounterRates(t *testing.T) {
 			&statscommand.Stat{Name: "outbound>>>" + tag + ">>>traffic>>>downlink", Value: 9000},
 		)
 	}
-	if got := counter.sample(stats, now); got != (trafficSample{UpTotal: 1000, DownTotal: 2000}) {
+	got := counter.sample(stats, now)
+	if got.Up != 0 || got.Down != 0 || got.UpTotal != 1000 || got.DownTotal != 2000 {
 		t.Fatalf("first sample = %+v, want zero rates and totals 1000/2000", got)
+	}
+	if got.Outbounds["proxy-a"].UpTotal != 400 || got.Outbounds["proxy-b"].DownTotal != 1200 {
+		t.Fatalf("per-tag totals = %+v", got.Outbounds)
 	}
 	stats[0].Value += 100
 	stats[1].Value += 200
 	stats[2].Value += 200
 	stats[3].Value += 400
-	if got := counter.sample(stats, now.Add(2500*time.Millisecond)); got != (trafficSample{
-		Up: 120, Down: 240, UpTotal: 1300, DownTotal: 2600,
-	}) {
+	got = counter.sample(stats, now.Add(2500*time.Millisecond))
+	if got.Up != 120 || got.Down != 240 || got.UpTotal != 1300 || got.DownTotal != 2600 {
 		t.Fatalf("second sample = %+v, want rates 120/240 and totals 1300/2600", got)
+	}
+	if got.Outbounds["proxy-a"].Up != 40 || got.Outbounds["proxy-b"].Down != 160 {
+		t.Fatalf("per-tag rates = %+v", got.Outbounds)
 	}
 }
 
@@ -84,13 +89,13 @@ func TestTrafficCounterReset(t *testing.T) {
 	}
 	counter.sample(stats, now)
 	stats[0].Value, stats[1].Value = 10, 20
-	if got := counter.sample(stats, now.Add(time.Second)); got != (trafficSample{UpTotal: 10, DownTotal: 20}) {
+	got := counter.sample(stats, now.Add(time.Second))
+	if got.Up != 0 || got.Down != 0 || got.UpTotal != 10 || got.DownTotal != 20 {
 		t.Fatalf("reset sample = %+v, want zero rates and totals 10/20", got)
 	}
 	stats[0].Value, stats[1].Value = 30, 60
-	if got := counter.sample(stats, now.Add(2*time.Second)); got != (trafficSample{
-		Up: 20, Down: 40, UpTotal: 30, DownTotal: 60,
-	}) {
+	got = counter.sample(stats, now.Add(2*time.Second))
+	if got.Up != 20 || got.Down != 40 || got.UpTotal != 30 || got.DownTotal != 60 {
 		t.Fatalf("sample after reset = %+v, want rates 20/40 and totals 30/60", got)
 	}
 }
@@ -134,12 +139,15 @@ func TestTrafficProducerPublishesStats(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var got map[string]float64
+		var got trafficSample
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Fatal(err)
 		}
-		if !maps.Equal(got, map[string]float64{"up": 0, "down": 0, "upTotal": 123, "downTotal": 456}) {
+		if got.Up != 0 || got.Down != 0 || got.UpTotal != 123 || got.DownTotal != 456 {
 			t.Fatalf("traffic body = %s", body)
+		}
+		if got.Outbounds["proxy"].UpTotal != 123 || got.Outbounds["proxy"].DownTotal != 456 {
+			t.Fatalf("proxy tag = %+v", got.Outbounds["proxy"])
 		}
 	case <-time.After(5 * ApiFeedInterval):
 		t.Fatal("no traffic frame received")

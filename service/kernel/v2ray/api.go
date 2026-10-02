@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/devfeel/mapper"
@@ -13,6 +12,7 @@ import (
 	pb "github.com/v2fly/v2ray-core/v5/app/observatory/command"
 	statscommand "github.com/v2fly/v2ray-core/v5/app/stats/command"
 	"github.com/v2rayA/v2rayA/db/configure"
+	"github.com/v2rayA/v2rayA/kernel/metrics"
 	"github.com/v2rayA/v2rayA/pkg/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -154,51 +154,23 @@ func ObservatoryProducer(apiPort int, observatoryTags []string) (closeFunc func(
 	}
 }
 
-type trafficSample struct {
-	Up        float64 `json:"up"`
-	Down      float64 `json:"down"`
-	UpTotal   int64   `json:"upTotal"`
-	DownTotal int64   `json:"downTotal"`
-}
+// trafficSample is the websocket "traffic" body. Up/Down remain the sum of
+// proxy outbounds. Outbounds is the same interval split by tag.
+type trafficSample = metrics.Sample
 
 type trafficCounter struct {
-	up, down int64
-	at       time.Time
+	inner metrics.Counter
 }
 
 func (c *trafficCounter) sample(stats []*statscommand.Stat, now time.Time) trafficSample {
-	var sample trafficSample
+	in := make([]metrics.Stat, 0, len(stats))
 	for _, stat := range stats {
-		name := stat.GetName()
-		if !strings.HasPrefix(name, "outbound>>>") {
+		if stat == nil {
 			continue
 		}
-		tag, direction, ok := strings.Cut(strings.TrimPrefix(name, "outbound>>>"), ">>>traffic>>>")
-		if !ok {
-			continue
-		}
-		switch tag {
-		case "direct", "block", "dns-out", "api-out":
-			continue
-		}
-		switch direction {
-		case "uplink":
-			sample.UpTotal += stat.GetValue()
-		case "downlink":
-			sample.DownTotal += stat.GetValue()
-		}
+		in = append(in, metrics.Stat{Name: stat.GetName(), Value: stat.GetValue()})
 	}
-	if elapsed := now.Sub(c.at).Seconds(); !c.at.IsZero() && elapsed > 0 {
-		// A restarted core can reset counters between successful samples.
-		if sample.UpTotal >= c.up {
-			sample.Up = float64(sample.UpTotal-c.up) / elapsed
-		}
-		if sample.DownTotal >= c.down {
-			sample.Down = float64(sample.DownTotal-c.down) / elapsed
-		}
-	}
-	c.up, c.down, c.at = sample.UpTotal, sample.DownTotal, now
-	return sample
+	return c.inner.Sample(in, now)
 }
 
 // TrafficProducer publishes outbound byte totals and rates until its close function is called.
