@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/v2rayA/v2rayA/kernel/coreObj"
 )
@@ -70,6 +71,14 @@ type hysteria2Params struct {
 	verifyPeerCertByName string
 	obfs                 string
 	obfsPassword         string
+	alpn                 []string
+	// upMbps / downMbps are decimal megabits from the share link.
+	// upMbps is this client's send ceiling. downMbps is the receive
+	// ceiling advertised in Hysteria-CC-RX; the server paces its send
+	// at min(server up_mbps, this value). xray's "N mbps" unit is
+	// mebibit/s (N * 1024 * 1024 / 8 bytes), about 4.9% above decimal.
+	upMbps   int
+	downMbps int
 }
 
 // parseLinkParams extracts the hysteria2 URL parameters, which are the source
@@ -106,6 +115,14 @@ func (s *Hysteria2) parseLinkParams() (p hysteria2Params) {
 	p.verifyPeerCertByName = q.Get("verify_peer_cert_by_name")
 	p.obfs = q.Get("obfs")
 	p.obfsPassword = q.Get("obfs-password")
+	for _, part := range strings.Split(q.Get("alpn"), ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			p.alpn = append(p.alpn, part)
+		}
+	}
+	p.upMbps, _ = strconv.Atoi(q.Get("upmbps"))
+	p.downMbps, _ = strconv.Atoi(q.Get("downmbps"))
 	return p
 }
 
@@ -134,6 +151,9 @@ func (s *Hysteria2) Configuration(info PriorInfo) (c Configuration, err error) {
 	} else {
 		tlsSettings.ServerName = p.sni
 	}
+	if len(p.alpn) > 0 {
+		tlsSettings.Alpn = p.alpn
+	}
 
 	streamSettings := &coreObj.StreamSettings{
 		Network:     "hysteria",
@@ -155,6 +175,22 @@ func (s *Hysteria2) Configuration(info PriorInfo) (c Configuration, err error) {
 				Settings: maskSettings,
 			}},
 		}
+	}
+	if p.upMbps > 0 || p.downMbps > 0 {
+		if streamSettings.FinalMask == nil {
+			streamSettings.FinalMask = &coreObj.FinalMask{}
+		}
+		quicParams := &coreObj.QuicParams{
+			Congestion: "brutal",
+			BbrProfile: "aggressive",
+		}
+		if p.upMbps > 0 {
+			quicParams.BrutalUp = fmt.Sprintf("%d mbps", p.upMbps)
+		}
+		if p.downMbps > 0 {
+			quicParams.BrutalDown = fmt.Sprintf("%d mbps", p.downMbps)
+		}
+		streamSettings.FinalMask.QuicParams = quicParams
 	}
 
 	return Configuration{

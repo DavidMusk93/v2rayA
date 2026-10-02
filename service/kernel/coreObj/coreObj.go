@@ -268,8 +268,19 @@ type HysteriaSettings struct {
 	Version int32  `json:"version"`
 	Auth    string `json:"auth,omitempty"`
 }
+// QuicParams is xray's finalmask.quicParams. BrutalUp is this side's send
+// ceiling. BrutalDown is advertised to the peer as Hysteria-CC-RX and becomes
+// the peer's send ceiling. Download speed is therefore brutalDown here and
+// the server's up_mbps, not brutalUp.
+type QuicParams struct {
+	Congestion string `json:"congestion,omitempty"`
+	BbrProfile string `json:"bbrProfile,omitempty"`
+	BrutalUp   string `json:"brutalUp,omitempty"`
+	BrutalDown string `json:"brutalDown,omitempty"`
+}
 type FinalMask struct {
-	Udp []UdpMask `json:"udp,omitempty"`
+	Udp        []UdpMask   `json:"udp,omitempty"`
+	QuicParams *QuicParams `json:"quicParams,omitempty"`
 }
 type UdpMask struct {
 	Type     string          `json:"type"`
