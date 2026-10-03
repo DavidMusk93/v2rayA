@@ -26,6 +26,7 @@ type Report struct {
 	CapUpBps     float64            `json:"cap_up_bps"`
 	Probe        ProbeView          `json:"probe"`
 	Decision     Decision           `json:"decision"`
+	Diagnosis    Diagnosis          `json:"diagnosis"`
 	Outbounds    map[string]TagRate `json:"outbounds,omitempty"`
 	Error        string             `json:"error,omitempty"`
 }
@@ -95,6 +96,9 @@ func Run(ctx context.Context, opt Options) {
 	var ring Ring
 	var sched Probe
 	var lastProbe ProbeView
+	var busy busyProbe
+	var idleTTFB time.Duration
+	var haveIdle bool
 	var dial *grpc.ClientConn
 	var apiPort int
 	defer func() {
@@ -138,16 +142,58 @@ func Run(ctx context.Context, opt Options) {
 			}
 			sample := counter.Sample(stats, now)
 			ring.Add(sample)
+			busyNow := sample.Demand >= DemandFloorBps || sample.Outbounds["proxy"].Down >= DemandFloorBps
+			probed := false
 			if sched.Due(now) {
+				probed = true
 				ok, ttfb := probeGenerate204(opt.SocksAddr())
 				res := sched.Observe(now, ok)
 				lastProbe = ProbeView{OK: ok, TTFBms: ttfb.Milliseconds(), Fails: res.Fails, Failover: res.Failover}
+				if ok && busyNow {
+					busy.note(ttfb, now)
+				} else if ok {
+					idleTTFB = ttfb
+					haveIdle = true
+				}
 				if res.Failover {
 					appendLine(opt.LogPath, fmt.Sprintf("%s failover recommend tag=proxy fails=%d\n", now.Format(time.RFC3339), res.Fails))
 				}
 			}
+			if busyNow && !probed && busy.begin(now) {
+				socks := opt.SocksAddr()
+				go func() {
+					ok, ttfb := probeGenerate204(socks)
+					if ok {
+						busy.note(ttfb, time.Now())
+					}
+					busy.done()
+				}()
+			}
 			in := controllerInput(state, ring)
 			decision := Evaluate(in)
+			window := ring.Last(10)
+			latest := map[string]float64{}
+			for tag, rate := range sample.Outbounds {
+				latest[tag] = rate.Down
+			}
+			busyTTFB, haveBusy := busy.recent(now)
+			diag := Diagnose(DiagInput{
+				CapDown:    state.capDown,
+				PeakDown:   PeakDown(window),
+				DemandPeak: PeakDemand(window),
+				LatestDown: latest,
+				Samples:    ring.Len(),
+				ProbeDead:  lastProbe.Failover,
+				IdleTTFB:   idleTTFB,
+				BusyTTFB:   busyTTFB,
+				HaveIdle:   haveIdle,
+				HaveBusy:   haveBusy,
+			})
+			if diag.Code != state.lastDiag && (diag.Code == "at_cap" || diag.Code == "overshoot" || diag.Code == "dead" || diag.Code == "misroute") {
+				appendLine(opt.LogPath, fmt.Sprintf("%s diagnose %s peak %.0f B/s idle %dms busy %dms tag %s\n",
+					now.Format(time.RFC3339), diag.Code, diag.PeakBps, diag.IdleTTFBms, diag.BusyTTFBms, diag.ActiveTag))
+				state.lastDiag = diag.Code
+			}
 			if decision.Action == "raise" || decision.Action == "lower" || decision.Action == "revert" {
 				appendLine(opt.LogPath, fmt.Sprintf("%s %s %s down %.0f -> %.0f B/s\n",
 					now.Format(time.RFC3339), decision.Action, decision.Reason, state.capDown, decision.NextDownBps))
@@ -166,6 +212,7 @@ func Run(ctx context.Context, opt Options) {
 				CapUpBps:     state.capUp,
 				Probe:        lastProbe,
 				Decision:     decision,
+				Diagnosis:    diag,
 				Outbounds:    sample.Outbounds,
 			})
 		}
@@ -178,6 +225,52 @@ type loopState struct {
 	baseline         float64
 	lastAction       string
 	changed          time.Time
+	lastDiag         string
+}
+
+// busyProbe measures generate_204 while bytes are flowing, without
+// stalling the one-second counter loop. A sample older than 20s is ignored.
+type busyProbe struct {
+	mu       sync.Mutex
+	inflight bool
+	last     time.Time
+	ttfb     time.Duration
+	have     bool
+	at       time.Time
+}
+
+func (b *busyProbe) begin(now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.inflight || now.Sub(b.last) < 8*time.Second {
+		return false
+	}
+	b.inflight = true
+	b.last = now
+	return true
+}
+
+func (b *busyProbe) done() {
+	b.mu.Lock()
+	b.inflight = false
+	b.mu.Unlock()
+}
+
+func (b *busyProbe) note(ttfb time.Duration, at time.Time) {
+	b.mu.Lock()
+	b.ttfb = ttfb
+	b.have = true
+	b.at = at
+	b.mu.Unlock()
+}
+
+func (b *busyProbe) recent(now time.Time) (time.Duration, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.have || now.Sub(b.at) > 20*time.Second {
+		return 0, false
+	}
+	return b.ttfb, true
 }
 
 func controllerInput(st loopState, ring Ring) Input {

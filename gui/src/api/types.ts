@@ -163,6 +163,15 @@ export interface MetricsReport {
     next_up_bps: number;
     utilization: number;
   };
+  diagnosis?: {
+    code: string;
+    peak_bps: number;
+    cap_ratio: number;
+    headroom_bps: number;
+    active_tag?: string;
+    idle_ttfb_ms: number;
+    busy_ttfb_ms: number;
+  };
   outbounds?: Record<
     string,
     { up: number; down: number; upTotal: number; downTotal: number }

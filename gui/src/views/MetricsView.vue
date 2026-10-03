@@ -30,6 +30,25 @@ onUnmounted(() => window.clearInterval(timer));
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
 }
+
+const diagKey: Record<string, string> = {
+  warming: "metrics.diagWarming",
+  idle: "metrics.diagIdle",
+  dead: "metrics.diagDead",
+  misroute: "metrics.diagMisroute",
+  at_cap: "metrics.diagAtCap",
+  under_cap: "metrics.diagUnder",
+  overshoot: "metrics.diagOvershoot",
+};
+const explainKey: Record<string, string> = {
+  warming: "metrics.explainWarming",
+  idle: "metrics.explainIdle",
+  dead: "metrics.explainDead",
+  misroute: "metrics.explainMisroute",
+  at_cap: "metrics.explainAtCap",
+  under_cap: "metrics.explainUnder",
+  overshoot: "metrics.explainOvershoot",
+};
 </script>
 
 <template>
@@ -42,16 +61,26 @@ function pct(n: number): string {
         <v-card variant="flat" color="surface-container" rounded="xl">
           <v-card-item>
             <v-card-subtitle>{{ t("metrics.action") }}</v-card-subtitle>
-            <v-card-title>{{ report.decision.action }}</v-card-title>
-            <p class="md3-body-medium">{{ report.decision.reason }}</p>
+            <v-card-title>{{
+              t(diagKey[report.diagnosis?.code || ""] || "metrics.diagWarming", {
+                tag: report.diagnosis?.active_tag || "",
+              })
+            }}</v-card-title>
+            <p class="md3-body-medium">
+              {{
+                t(explainKey[report.diagnosis?.code || ""] || "metrics.explainWarming", {
+                  tag: report.diagnosis?.active_tag || "",
+                })
+              }}
+            </p>
           </v-card-item>
         </v-card>
         <v-card variant="flat" color="surface-container" rounded="xl">
           <v-card-item>
-            <v-card-subtitle>{{ t("metrics.utilization") }}</v-card-subtitle>
-            <v-card-title>{{ pct(report.decision.utilization) }}</v-card-title>
+            <v-card-subtitle>{{ t("metrics.peak") }}</v-card-subtitle>
+            <v-card-title>{{ formatRate(report.diagnosis?.peak_bps || 0) }}</v-card-title>
             <p class="md3-body-medium">
-              {{ t("metrics.down") }} {{ formatRate(report.down_bps_10s) }}
+              {{ t("metrics.ofCap") }} {{ pct(report.diagnosis?.cap_ratio || 0) }}
             </p>
           </v-card-item>
         </v-card>
@@ -63,10 +92,8 @@ function pct(n: number): string {
               {{ report.probe.ttfb_ms }} ms
             </v-card-title>
             <p class="md3-body-medium">
-              {{ t("metrics.fails") }} {{ report.probe.fails }}
-              <template v-if="report.probe.failover">
-                · {{ t("metrics.failover") }}
-              </template>
+              {{ t("metrics.idleDelay") }} {{ report.diagnosis?.idle_ttfb_ms || 0 }} ms
+              · {{ t("metrics.busyDelay") }} {{ report.diagnosis?.busy_ttfb_ms || 0 }} ms
             </p>
           </v-card-item>
         </v-card>
