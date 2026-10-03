@@ -60,7 +60,7 @@ func CheckCoreVersionMatch() error {
 		return nil
 	}
 
-	if coreVer != serviceVer {
+	if !sameRelease(coreVer, serviceVer) {
 		// The two binaries are released together from one tree, so a mismatch
 		// almost always means an xray-core or v2ray-core binary is installed
 		// where v2raya_core belongs. Say that instead of two bare numbers.
@@ -73,4 +73,62 @@ func CheckCoreVersionMatch() error {
 		})
 	}
 	return nil
+}
+
+// sameRelease reports whether the service and the core are the same v2rayA
+// release. A git-describe build such as v2.5.8-3-g2186d1a (optional -dirty)
+// matches a core that still reports the tagged version 2.5.8. A different
+// core, such as xray reporting 26.9.30, still mismatches.
+func sameRelease(coreVer, serviceVer string) bool {
+	c := releaseBase(coreVer)
+	s := releaseBase(serviceVer)
+	return c != "" && c == s
+}
+
+func releaseBase(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "v")
+	v = strings.TrimPrefix(v, "V")
+	v = strings.TrimSuffix(v, "-dirty")
+	if v == "" {
+		return ""
+	}
+	// git describe: <base>-<distance>-g<hex>
+	g := strings.LastIndex(v, "-g")
+	if g > 0 {
+		head := v[:g]
+		dash := strings.LastIndex(head, "-")
+		if dash > 0 && allDigits(head[dash+1:]) && len(v) >= g+6 && allHex(v[g+2:]) {
+			return head[:dash]
+		}
+	}
+	return v
+}
+
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func allHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
