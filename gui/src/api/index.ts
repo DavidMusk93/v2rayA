@@ -18,6 +18,7 @@ import type {
   Setting,
   SettingResponse,
   TouchResponse,
+  MetricsReport,
   VersionResponse,
   Which,
 } from "./types";
@@ -31,6 +32,9 @@ export const postLogin = (body: { username: string; password: string }) =>
   call<{ token: string }>({ url: "login", method: "post", data: body });
 export const getVersion = () =>
   call<VersionResponse>({ url: "version", method: "get" });
+export const getMetrics = () =>
+  call<MetricsReport>({ url: "metrics", method: "get" });
+export type { MetricsReport };
 export const getParams = () =>
   call<{ params: Param[] }>({ url: "params", method: "get" });
 

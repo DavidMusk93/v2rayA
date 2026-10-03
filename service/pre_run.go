@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"syscall"
 
+	"github.com/v2rayA/v2rayA/conf"
 	"github.com/v2rayA/v2rayA/db"
 	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/v2rayA/v2rayA/kernel/ipforward"
+	"github.com/v2rayA/v2rayA/kernel/metrics"
 	"github.com/v2rayA/v2rayA/kernel/v2ray"
 	"github.com/v2rayA/v2rayA/pkg/util/log"
 	"github.com/v2rayA/v2rayA/server/router"
@@ -47,8 +53,24 @@ func recoverPendingHostState() {
 
 func run() error {
 	recoverPendingHostState()
+	metricsCtx, stopMetrics := context.WithCancel(context.Background())
+	go metrics.Run(metricsCtx, metrics.Options{
+		APIPort: v2ray.ProcessManager.APIPort,
+		SocksAddr: func() string {
+			port := configure.GetPortsNotNil().Socks5
+			if port <= 0 {
+				port = 2080
+			}
+			return net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+		},
+		StatusPath: filepath.Join(conf.GetEnvironmentConfig().Config, "metrics-status.json"),
+		LogPath:    filepath.Join(conf.GetEnvironmentConfig().Config, "metrics-decisions.log"),
+		CapDown:    160 * metrics.MbpsToBps,
+		CapUp:      40 * metrics.MbpsToBps,
+	})
 	cleanup := func() {
 		fmt.Println("Quitting...")
+		stopMetrics()
 		v2ray.ProcessManager.CheckAndStopTransparentProxy(nil)
 		v2ray.ProcessManager.Stop(false)
 		_ = db.Close()

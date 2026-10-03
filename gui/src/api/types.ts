@@ -147,6 +147,28 @@ export interface ObservatoryMessage {
   type: "observatory";
   body: { outboundName: string; outboundStatus: OutboundStatus[] };
 }
+export interface MetricsReport {
+  time: string;
+  proxy_down_bps: number;
+  proxy_up_bps: number;
+  demand_bps: number;
+  down_bps_10s: number;
+  cap_down_bps: number;
+  cap_up_bps: number;
+  probe: { ok: boolean; ttfb_ms: number; fails: number; failover: boolean };
+  decision: {
+    action: string;
+    reason: string;
+    next_down_bps: number;
+    next_up_bps: number;
+    utilization: number;
+  };
+  outbounds?: Record<
+    string,
+    { up: number; down: number; upTotal: number; downTotal: number }
+  >;
+  error?: string;
+}
 export interface TrafficMessage {
   type: "traffic";
   body: {

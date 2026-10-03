@@ -309,6 +309,7 @@ func Run() error {
 		auth.DELETE("outbound", controller.DeleteOutbound)
 		auth.GET("message", controller.WsMessage)
 		auth.GET("logger", controller.GetLogger)
+		auth.GET("metrics", controller.GetMetrics)
 		auth.GET("domainsExcluded", controller.GetDomainsExcluded)
 		auth.GET("tproxyWhiteIpGroups", controller.GetTproxyWhiteIpGroups)
 		auth.PUT("domainsExcluded", controller.PutDomainsExcluded)

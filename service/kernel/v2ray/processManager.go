@@ -503,3 +503,13 @@ func (m *CoreProcessManager) Process() *Process {
 	defer m.mu.Unlock()
 	return m.p
 }
+
+// APIPort is the core's stats port, or 0 when the core is not running.
+func (m *CoreProcessManager) APIPort() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.p == nil || m.p.template == nil {
+		return 0
+	}
+	return m.p.template.ApiPort
+}

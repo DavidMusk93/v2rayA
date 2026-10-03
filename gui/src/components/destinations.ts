@@ -9,6 +9,8 @@ import {
   mdiCog,
   mdiRss,
   mdiRssBox,
+  mdiChartBoxOutline,
+  mdiChartBox,
   mdiScriptTextOutline,
   mdiScriptText,
   mdiServerNetworkOutline,
@@ -29,7 +31,7 @@ export interface Destination {
 
 /** the five the compact window's bottom bar shows */
 export const barDestinations = () =>
-  destinations.filter((d) => d.view !== "docs");
+  destinations.filter((d) => d.view !== "docs" && d.view !== "metrics");
 
 export const destinations: Destination[] = [
   {
@@ -55,6 +57,12 @@ export const destinations: Destination[] = [
     label: "common.setting",
     icon: mdiCogOutline,
     activeIcon: mdiCog,
+  },
+  {
+    view: "metrics",
+    label: "common.metrics",
+    icon: mdiChartBoxOutline,
+    activeIcon: mdiChartBox,
   },
   {
     view: "logs",
